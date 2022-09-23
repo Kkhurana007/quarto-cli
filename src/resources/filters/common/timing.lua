@@ -53,8 +53,16 @@ function capture_timings(filterList)
       table.insert(finalResult, newFilter)
     end
   else
-    for i, v in ipairs(filterList) do
-      table.insert(finalResult, v["filter"])
+    for _, v in ipairs(filterList) do
+      if v.filter ~= nil then
+        table.insert(finalResult, v.filter)
+      elseif v.filters ~= nil then
+        for _, innerV in pairs(v.filters) do
+          table.insert(finalResult, innerV)
+        end
+      else
+        print("Warning: filter " .. v.name .. " didn't declare filter or filters.")
+      end
     end
   end
 

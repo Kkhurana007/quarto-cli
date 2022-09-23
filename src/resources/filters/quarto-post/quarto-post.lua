@@ -5,40 +5,57 @@
 PANDOC_VERSION:must_be_at_least '2.13'
 
 -- global state
-postState = {}
+postState = {
+  extendedAstNodeHandlers = {}
+}
 
 -- [import]
 function import(script)
   local path = PANDOC_SCRIPT_FILE:match("(.*[/\\])")
   dofile(path .. script)
 end
-import("responsive.lua")
-import("latexdiv.lua")
-import("foldcode.lua")
+
+import("../ast/normalize.lua") -- normalize must come before extended-nodes.lua
+import("../ast/pandocwalk.lua") -- pandocwalk must come before extended-nodes.lua
+import("../ast/extended-nodes.lua")
+import("../ast/make-extended-filters.lua")
+import("../ast/parse.lua")
+import("../ast/run-as-extended-ast.lua")
+import("../ast/normalize.lua")
+import("../ast/extended-nodes.lua")
+import("../ast/make-extended-filters.lua")
+import("../ast/render.lua")
+import("../common/authors.lua")
+import("../common/base64.lua")
+import("../common/debug.lua")
+import("../common/figures.lua")
+import("../common/layout.lua")
+import("../common/log.lua")
+import("../common/lunacolors.lua")
+import("../common/map-or-call.lua")
+import("../common/meta.lua")
+import("../common/pandoc.lua")
+import("../common/string.lua")
+import("../common/table.lua")
+import("../common/timing.lua")
+import("../common/wrapped-filter.lua")
+import("book.lua")
+import("delink.lua")
 import("fig-cleanup.lua")
+import("foldcode.lua")
 import("ipynb.lua")
+import("latexdiv.lua")
+import("meta.lua")
 import("ojs.lua")
+import("responsive.lua")
 import("reveal.lua")
 import("tikz.lua")
-import("meta.lua")
-import("delink.lua")
-import("book.lua")
-import("../common/lunacolors.lua")
-import("../common/log.lua")
-import("../common/base64.lua")
-import("../common/table.lua")
-import("../common/layout.lua")
-import("../common/pandoc.lua")
-import("../common/figures.lua")
-import("../common/meta.lua")
-import("../common/debug.lua")
-import("../common/authors.lua")
-import("../common/string.lua")
+
 -- [/import]
 
-return {
-  foldCode(),
-  combineFilters({
+local filterList = {
+  { name = "foldCode", filter = foldCode() },
+  { name = "figureCleanupCombined", filter = combineFilters({
     latexDiv(),
     responsive(),
     ipynb(),
@@ -47,10 +64,13 @@ return {
     tikz(),
     delink(),
     figCleanup()
-  }),
-  ojs(),
-  quartoPostMetaInject(),
+  }) },
+  { name = "ojs", filter = ojs() },
+  { name = "postMetaInject", filter = quartoPostMetaInject() },
+  { name = "renderExtendedNodes", filter = renderExtendedNodes() },
+  { name = "userAfterQuartoFilters", filter = makeExtendedUserFilters("afterQuartoFilters") }
 }
 
-
-
+return run_as_extended_ast({
+  filters = capture_timings(filterList),
+})

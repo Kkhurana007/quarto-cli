@@ -1,0 +1,18 @@
+function renderExtendedNodes() 
+  if string.find(FORMAT, ".lua$") then
+    return {}
+  end
+
+  return {
+    Div = function(div)
+      local tagName = div.attr.attributes[kExtendedAstTag]
+      local tag = tagName and pandoc.utils.stringify(div.attr.attributes[kExtendedAstTag])      
+      local handler = quarto.ast.resolveHandler(tag)
+      if handler == nil then
+        return div
+      end
+      local divTable = quarto.ast.unbuild(div)
+      return handler.render(divTable)
+    end
+  }
+end
