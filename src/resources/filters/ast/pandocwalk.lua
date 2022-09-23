@@ -145,7 +145,7 @@ function apply_filter_topdown(filter, node)
 
   -- are there user filter functions or fallback functions?
   local fn = (filter[t] 
-    or filter[node.is_custom and node.is_custom() and "Custom"] -- explicit check needed for Meta :facepalm:
+    or filter[node.is_custom and "Custom"] -- explicit check needed for Meta :facepalm:
     or filter[(is_block[t] and "Block") or "Inline"])
 
   -- if node.t == "FancyCallout" then

@@ -44,9 +44,6 @@ crossref = {
 -- import("../common/string.lua")
 -- import("../common/debug.lua")
 -- -- [/import]
-
-initIndex()
-
 -- -- chain of filters
 -- return {
 --   initCrossrefOptions(),

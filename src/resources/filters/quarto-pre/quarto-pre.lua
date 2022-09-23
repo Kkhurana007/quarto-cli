@@ -115,6 +115,7 @@ import("../crossref/meta.lua")
 import("../crossref/format.lua")
 import("../crossref/options.lua")
 import("../crossref/crossref.lua")
+initCrossrefIndex()
 
 import("bibliography-formats.lua")
 import("book-links.lua")

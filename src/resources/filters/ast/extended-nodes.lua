@@ -280,7 +280,7 @@ local pandoc_ast_methods = {
   walk = emulate_pandoc_walk,
 
   -- custom nodes override this in their metatable
-  is_custom = function(self) return false end
+  is_custom = false
 }
 
 function _build_extended_node(t, is_custom)
@@ -294,7 +294,9 @@ function _build_extended_node(t, is_custom)
         if key == "-is-extended-ast-" then return true end
         if key == "-quarto-internal-type-" then return t end
         if key == "attributes" and tbl.attr then return tbl.attr.attributes end
-        if key == "is_custom" then return function() return is_custom end end
+        if key == "classes" and tbl.attr then return tbl.attr.classes end
+        if key == "is_emulated" then return true end
+        if key == "is_custom" then return is_custom end
         return pandoc_ast_methods[key] or pandoc_list_methods[key]
       end
     })
@@ -305,7 +307,9 @@ function _build_extended_node(t, is_custom)
         if key == "-is-extended-ast-" then return true end
         if key == "-quarto-internal-type-" then return t end
         if key == "attributes" and tbl.attr then return tbl.attr.attributes end
-        if key == "is_custom" then return function() return is_custom end end
+        if key == "classes" and tbl.attr then return tbl.attr.classes end
+        if key == "is_emulated" then return true end
+        if key == "is_custom" then return is_custom end
         return pandoc_ast_methods[key]
       end
     })
@@ -337,7 +341,7 @@ quarto.ast = {
 
     local ExtendedAstNode = _build_extended_node(
       el.t or el["-quarto-internal-type-"] or pandoc.utils.type(el),
-      (el.is_custom and el.is_custom()) or false
+      el.is_custom or false
     )
 
     function is_content_field(k)

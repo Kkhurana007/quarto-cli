@@ -232,8 +232,6 @@ function denormalize(node)
     if type(v) == "function" then
       args = v(tbl)
     else
-      print(t)
-      quarto.utils.dump(tbl, true)
       args = tmap(v, function(key) 
         return tbl[key] 
       end)
@@ -279,9 +277,7 @@ function denormalize(node)
 
   local typeTable = {
     Pandoc = function(tbl)
-      quarto.utils.dump(tbl)
       tbl = copy(tbl)
-      quarto.utils.dump(tbl)
       tbl.blocks = doArray(tbl.blocks)
       local result = baseHandler(tbl)
       return result
@@ -355,11 +351,8 @@ function denormalize(node)
   if type(node) ~= "table" then
     return node
   end
-  if node.t == "BulletList" then
-    quarto.utils.dump(node)
-  end
 
-  if node.is_custom and node.is_custom() then
+  if node.is_custom then
     local denormalizedTable = {}
     for k, v in pairs(node) do
       if not (k == "t" or k == "tag" or k == "class" or k == "attr" or k == "-is-extended-ast-" or k == "-quarto-internal-type-") then

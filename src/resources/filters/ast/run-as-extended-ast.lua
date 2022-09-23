@@ -4,7 +4,7 @@ function do_it(doc, filters)
     -- quarto.utils.dump(doc)
 
     for i, v in pairs(filters) do
-      -- print("Will run filter " .. tostring(i) .. ": ")
+      -- print("Will run filter " .. tostring(v._filter_name or i) .. ": ")
       -- quarto.utils.dump(doc)
       -- quarto.utils.dump(doc, true)
       local newDoc = doc:walk(v)
@@ -27,8 +27,24 @@ function emulate_pandoc_filter(filters, unextended)
   return {
     traverse = 'topdown',
     Pandoc = function(doc)
-      -- print("Filters to be run under emulation:")
-      -- quarto.utils.dump(filters)
+
+      -- upgrade pandoc to our stuff
+      local walk_block = pandoc.walk_block
+      local walk_inline = pandoc.walk_inline
+
+      pandoc.walk_block = function(el, filter)
+        if el.is_emulated then
+          return el:walk(filter)
+        end
+        return walk_block(el, filter)
+      end
+      pandoc.walk_inline = function(el, filter)
+        if el.is_emulated then
+          return el:walk(filter)
+        end
+        return walk_inline(el, filter)
+      end
+
       if not unextended then
         doc = normalize(doc)
       end
@@ -43,6 +59,11 @@ function emulate_pandoc_filter(filters, unextended)
           return pandoc.Pandoc({}, {}) -- a lie to appease the type system
         end
       end
+
+      -- restore pandoc
+      pandoc.walk_block = walk_block
+      pandoc.walk_inline = walk_inline
+
       return pandoc.Pandoc(doc.blocks, doc.meta), false
     end
   }
