@@ -144,8 +144,14 @@ function apply_filter_topdown(filter, node)
   end 
 
   -- are there user filter functions or fallback functions?
-  local fn = filter[t] or filter[(is_block[t] and "Block") or "Inline"]
+  local fn = (filter[t] 
+    or filter[node.is_custom and node.is_custom() and "Custom"] -- explicit check needed for Meta :facepalm:
+    or filter[(is_block[t] and "Block") or "Inline"])
 
+  -- if node.t == "FancyCallout" then
+  --   quarto.utils.dump(filter)
+  -- end
+  
   if fn ~= nil then
     local filterResult, cut = fn(node)
 
@@ -222,6 +228,15 @@ function walk_block_splicing(filter, node)
   }, node)
 end
 
+function walk_custom_splicing(filter, node)
+  if filter.Custom == nil then
+    return node
+  end
+  return apply_filter_topdown({
+    Custom = filter.Custom
+  }, node)
+end
+
 function walk_inlines_straight(filter, node)
   -- it's a nop, special-case it
   if filter.Inlines == nil then
@@ -267,6 +282,7 @@ function walk_blocks_and_inlines(node, filter)
     node = walk_inlines_straight(filter, node)
     node = walk_block_splicing(filter, node)
     node = walk_blocks_straight(filter, node)
+    node = walk_custom_splicing(filter, node)
     return node
   end
 end

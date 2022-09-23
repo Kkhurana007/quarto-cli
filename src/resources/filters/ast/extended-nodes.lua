@@ -19,34 +19,21 @@ local handlers = {
     astName = "FancyCallout",
 
     -- a function that takes the extended ast node as supplied in user markdown
-    -- and parses it into a table. if "attr" is set, then that is used
-    -- as the attr attribute of the Div that will hold it.
+    -- and returns a new Pandoc node (use quarto.ast.pandoc instead of pandoc if
+    -- you need access to extended ast nodes)
     parse = function(div)
-      return {
-        -- the value of class must either be equal to className if it's a string,
-        -- or one of the entries in className if it's an array
-
-        -- class must be a string
-        class = pandoc.utils.stringify(div.attr.classes),
-        
-        -- attr, if provided, must be a pandoc Attr
-        attr = div.attr,
-
-        -- all other fields must be pandoc Blocks
+      return quarto.ast.custom("FancyCallout", {
         title = div.content[1],
         content = div.content[2],
-      }
+      })
     end,
 
     -- either a function that unconditionally renders the extendedNode into
     -- output, or a table of functions, whose keys are the output formats
-    
     render = function(extendedNode)
-      local blocks = {}
-      table.insert(blocks, extendedNode.title)
-      table.insert(blocks, extendedNode.content)
-      extendedNode.attr.attributes["quarto-extended-ast-tag"] = nil
-      return pandoc.Div(blocks, extendedNode.attr)
+      return quarto.ast.pandoc.Div(quarto.ast.pandoc.Blocks({
+        extendedNode.title, extendedNode.content
+      }))
     end,
     -- render = {
     --   html = function(extendedNode)
@@ -115,7 +102,7 @@ function ast_node_array_map(node_array, fn)
   end
 end
 
-local _quarto_pandoc = {
+local _quarto_pandoc_special_constructors = {
   Inlines = function(args)
     local result = _build_extended_node("Inlines")
     for k, v in pairs(args or {}) do
@@ -136,9 +123,37 @@ local _quarto_pandoc = {
   end,
 }
 
+local emulated_node_factory = function(t)
+  return function(...)
+    local args = { ... }
+    -- NB: we can't index into quarto.ast.pandoc in this function
+    -- because it's used in the __index metatable of quarto.ast.pandoc
+    -- which can cause infinite recursion
+
+    if _quarto_pandoc_special_constructors[t] then
+      -- special cases handled directly by quarto.ast.pandoc
+      return _quarto_pandoc_special_constructors[t](table.unpack(args))
+    end
+
+    local result = _build_extended_node(t)
+    local argsTable = _pandoc_constructors_args[t]
+    if argsTable == nil then
+      for i, v in pairs(args) do
+        result[i] = v
+      end
+    else
+      for i, v in ipairs(args) do
+        result[argsTable[i]] = v
+      end
+    end
+    return result
+  end
+end
+
+local _quarto_pandoc = {}
 setmetatable(_quarto_pandoc, {
   __index = function(_, key)
-    return quarto.ast.makeExtendedNodeFactory(key)
+    return _quarto_pandoc_special_constructors[key] or emulated_node_factory(key)
   end
 })
 
@@ -262,11 +277,15 @@ local pandoc_ast_methods = {
     -- FIXME this should be a deep copy
     return quarto.ast.copyAsExtendedNode(self)
   end,
-  walk = emulate_pandoc_walk
+  walk = emulate_pandoc_walk,
+
+  -- custom nodes override this in their metatable
+  is_custom = function(self) return false end
 }
 
-function _build_extended_node(t)
+function _build_extended_node(t, is_custom)
   local ExtendedAstNode = {}
+  is_custom = is_custom or false
 
   if t == "Inlines" or t == "Blocks" then
     setmetatable(ExtendedAstNode, {
@@ -275,6 +294,7 @@ function _build_extended_node(t)
         if key == "-is-extended-ast-" then return true end
         if key == "-quarto-internal-type-" then return t end
         if key == "attributes" and tbl.attr then return tbl.attr.attributes end
+        if key == "is_custom" then return function() return is_custom end end
         return pandoc_ast_methods[key] or pandoc_list_methods[key]
       end
     })
@@ -285,6 +305,7 @@ function _build_extended_node(t)
         if key == "-is-extended-ast-" then return true end
         if key == "-quarto-internal-type-" then return t end
         if key == "attributes" and tbl.attr then return tbl.attr.attributes end
+        if key == "is_custom" then return function() return is_custom end end
         return pandoc_ast_methods[key]
       end
     })
@@ -295,20 +316,13 @@ end
 
 quarto.ast = {
   pandoc = _quarto_pandoc,
-  makeExtendedNodeFactory = function(t)
-    return function(...)
-      local argsTable = _pandoc_constructors_args[t]
-      if argsTable == nil then
-        -- assume this is a special case that's handled directly by quarto.ast.pandoc
-        return quarto.ast.pandoc[t](table.unpack(arg or {}))
-      else
-        local result = _build_extended_node(t)
-        for i, v in pairs(argsTable) do
-          result[v] = arg[i]
-        end
-        return result
-      end
+
+  custom = function(name, tbl)
+    local result = _build_extended_node(name, true)
+    for k, v in pairs(tbl) do
+      result[k] = v
     end
+    return result
   end,
 
   copyAsExtendedNode = function(el)
@@ -318,10 +332,13 @@ quarto.ast = {
     if type(el) ~= "table" and type(el) ~= "userdata" then
       error("Internal Error: copyAsExtendedNode can't handle type " .. type(el))
       crash_with_stack_trace()
-      return {} -- a lie to appease to type system
+      return _build_extended_node("Div") -- a lie to appease to type system
     end
 
-    local ExtendedAstNode = _build_extended_node(el.t or el["-quarto-internal-type-"] or pandoc.utils.type(el))
+    local ExtendedAstNode = _build_extended_node(
+      el.t or el["-quarto-internal-type-"] or pandoc.utils.type(el),
+      (el.is_custom and el.is_custom()) or false
+    )
 
     function is_content_field(k)
       return k ~= "walk" and k ~= "clone" and k ~= "show" and is_plain_key(k)
@@ -347,7 +364,7 @@ quarto.ast = {
     elseif type(handler.className) == "string" then
       state.namedHandlers[handler.className] = handler
     elseif type(handler.className) == "table" then
-      for i, name in pairs(handler.className) do
+      for _, name in pairs(handler.className) do
         state.namedHandlers[name] = handler
       end
     else
@@ -355,6 +372,9 @@ quarto.ast = {
       quarto.utils.dump(handler)
       crash_with_stack_trace()
     end
+
+    -- we also register them under the astName so that we can render it back
+    state.namedHandlers[handler.astName] = handler
   end,
 
   resolveHandler = function(name)
@@ -364,6 +384,7 @@ quarto.ast = {
     end
     return nil
   end,
+
 
   unbuild = function(extendedAstNode)
     local name = extendedAstNode.attr.attributes["quarto-extended-ast-tag"]
@@ -388,16 +409,17 @@ quarto.ast = {
   build = function(name, nodeTable)
     local handler = quarto.ast.resolveHandler(name)
     if handler == nil then
-      local pandocArgs = _pandoc_constructors_args[name]
-      if pandocArgs == nil then
-        print("Internal Error: couldn't find a handler for " .. tostring(name))
-        crash_with_stack_trace()
-      end
-      local args = {}
-      for _, v in pairs(pandocArgs) do
-        table.insert(args, nodeTable[v])
-      end
-      return pandoc[name](table.unpack(args))
+      print("Internal Error: couldn't find a handler for " .. tostring(name))
+      crash_with_stack_trace()
+      -- local pandocArgs = _pandoc_constructors_args[name]
+      -- if pandocArgs == nil then
+      -- end
+      -- local args = {}
+      -- for _, v in pairs(pandocArgs) do
+      --   table.insert(args, nodeTable[v])
+      -- end
+      -- return pandoc[name](table.unpack(args))
+      return pandoc.Div({}, {}) -- a lie to appease the type system
     end
     if handler.makePandocExtendedDiv then
       return handler.makePandocExtendedDiv(nodeTable)

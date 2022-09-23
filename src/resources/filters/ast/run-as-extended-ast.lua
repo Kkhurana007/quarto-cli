@@ -4,8 +4,8 @@ function do_it(doc, filters)
     -- quarto.utils.dump(doc)
 
     for i, v in pairs(filters) do
-      print("Will run filter " .. tostring(i) .. ": ")
-      -- quarto.utils.dump(v)
+      -- print("Will run filter " .. tostring(i) .. ": ")
+      -- quarto.utils.dump(doc)
       -- quarto.utils.dump(doc, true)
       local newDoc = doc:walk(v)
       if newDoc ~= nil then

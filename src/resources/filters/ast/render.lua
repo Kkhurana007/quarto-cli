@@ -4,15 +4,13 @@ function renderExtendedNodes()
   end
 
   return {
-    Div = function(div)
-      local tagName = div.attr.attributes[kExtendedAstTag]
-      local tag = tagName and pandoc.utils.stringify(div.attr.attributes[kExtendedAstTag])      
-      local handler = quarto.ast.resolveHandler(tag)
+    Custom = function(customNode)
+      local handler = quarto.ast.resolveHandler(customNode.t)
       if handler == nil then
-        return div
+        error("Internal Error: handler not found for custom node " .. customNode.t)
+        crash_with_stack_trace()
       end
-      local divTable = quarto.ast.unbuild(div)
-      return handler.render(divTable)
-    end
+      return handler.render(customNode)
+    end,
   }
 end

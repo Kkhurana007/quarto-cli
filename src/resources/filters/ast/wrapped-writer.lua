@@ -63,6 +63,7 @@ ourWrappedWriter = makeWrappedFilter(param("custom-writer"), function(handler)
       for i, block in pairs(element.citations) do
         table.insert(result, block)
       end
+      return result
     end,
 
     Emph = contentHandler,
@@ -87,6 +88,12 @@ ourWrappedWriter = makeWrappedFilter(param("custom-writer"), function(handler)
     Space = function() return { " " } end,
     LineBreak = function() return { "\n" } end,
     SoftBreak = function() return { "\n" } end,
+    Inlines = function(inlines)
+      return inlines
+    end,
+    Blocks = function(blocks)
+      return blocks
+    end,
   }
   setmetatable(bottomUpWalkers, {
     __index = function(_, key)
@@ -125,7 +132,8 @@ ourWrappedWriter = makeWrappedFilter(param("custom-writer"), function(handler)
         node = quarto.ast.build(node)
         t = node.t or pandoc.utils.type(node)
       end
-      -- postcondition: nodeHandler ~= nil and type(node) == table or type(node) == userdata and t has been set
+      -- postcondition: 
+      --   A: type(node) == "table" and pandoc.utils.type(node) == "table" and (nodeHandler == nil => t has been set)      
     elseif type(node) == "userdata" then
       t = node.t or pandoc.utils.type(node)
       -- try to find quarto extended AST tag
@@ -137,16 +145,32 @@ ourWrappedWriter = makeWrappedFilter(param("custom-writer"), function(handler)
       if nodeHandler ~= nil then
         node = quarto.ast.unbuild(node)
       end
-      -- postcondition: nodeHandler ~= nil and type(node) == table or type(node) == userdata and t has been set
+      -- postcondition:
+      --   B: type(node) == "userdata" and t has been set and (nodeHandler ~= nil => type(node) == "table")
+    else
+      if type(node) ~= "table" then
+        error("Internal error, expected type of node to be table, got " .. type(node) .. " instead")
+        crash_with_stack_trace()
+      end
+      t = node.t or pandoc.utils.type(node)
+      -- postcondition:
+      --   C: t has been set and type(node) == "table"
     end
-    -- postcondition: nodeHandler ~= nil and type(node) == table or type(node) == userdata and t has been set
-
-    -- at this point, we have 
-    --    type(node) == "table"    and nodeHandler ~= nil    (yes custom writer entry for extended ast)
-    -- or type(node) == "userdata" and nodeHandler == nil (no  custom writer entry for extended ast)
+    -- postcondition:
+    --   - A or B or C (from if statement output)
+    --   - if nodeHandler == nil then A or B or C else A or B or C end (introduce condition)
+    --   - if nodeHandler == nil then 
+    --       (t has been set) or (t has been set) or (t has been set) else A or B or C end (condition on true)
+    --   - if nodeHandler == nil then 
+    --       (t has been set) else A or B or C end (condition on true)
+    --   - if nodeHandler == nil then 
+    --       (t has been set) else (type(node) == "table") or (type(node) == "table") or (type(node) == "table")) end (condition on false)
+    --   - if nodeHandler == nil then 
+    --       (t has been set) else (type(node) == "table") 
+    --     end (simplify)
 
     if nodeHandler == nil then
-      -- no extended ast, hence t has been set
+      -- postcontdition: t has been set
       nodeHandler = handler[t] and handler[t].handle
 
       if nodeHandler == nil then
@@ -160,7 +184,6 @@ ourWrappedWriter = makeWrappedFilter(param("custom-writer"), function(handler)
 
         return nil
       end
-
       -- postcondition: we found handler
     end
     -- postcondition: we found handler

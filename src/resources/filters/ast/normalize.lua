@@ -20,16 +20,10 @@ function normalize(node)
 
   local doInlinesArray = function(lst)
     return quarto.ast.pandoc.Inlines(tmap(lst, normalize))
-    -- print("Before")
-    -- quarto.utils.dump(lst)
-    -- print("after")
-    -- local result = quarto.ast.pandoc.Inlines(tmap(lst, normalize))
-    -- quarto.utils.dump(result, true)
-    -- return result
   end
 
   local doBlocksArrayArray = function(lst) 
-    -- return tmap(lst, doBlocksArray) 
+    return tmap(lst, doBlocksArray) 
   end
 
   local doInlinesArrayArray = function(lst) 
@@ -86,17 +80,20 @@ function normalize(node)
 
       local name = div.attr.attributes["quarto-extended-ast-tag"]
       local handler = quarto.ast.resolveHandler(name)
-      local result = {}
       if handler == nil then
+        -- we don't use the handler, but just check for its
+        -- absence and build a standard div block in that case.
         return blocksContentHandler(div)
+      else
+        return baseHandler(div)
       end
-      local extendedAstNodeShallow = quarto.ast.unbuild(div)
-      for k, v in pairs(extendedAstNodeShallow) do
-        result[k] = normalize(v)
-      end
-      result["-quarto-internal-type-"] = name
-      result["-is-extended-ast-"] = true
-      return result
+      -- local extendedAstNodeShallow = quarto.ast.unbuild(div)
+      -- for k, v in pairs(extendedAstNodeShallow) do
+      --   result[k] = normalize(v)
+      -- end
+      -- result["-quarto-internal-type-"] = name
+      -- result["-is-extended-ast-"] = true
+      -- return result
     end,
 
     Header = inlinesContentHandler,
@@ -185,6 +182,7 @@ function denormalize(node)
   local argsTable = {
     Blocks = doArray,
     Inlines = doArray,
+
     Pandoc = { "blocks", "meta" },
     BlockQuote = { "content" },
     BulletList = { "content" },
@@ -234,6 +232,8 @@ function denormalize(node)
     if type(v) == "function" then
       args = v(tbl)
     else
+      print(t)
+      quarto.utils.dump(tbl, true)
       args = tmap(v, function(key) 
         return tbl[key] 
       end)
@@ -248,9 +248,10 @@ function denormalize(node)
   end
 
   local copy = function(tbl)
-    local result = {}
-    for k, v in pairs(tbl) do
-      result[k] = v
+    local result = quarto.ast.copyAsExtendedNode(tbl)
+    if result == nil then
+      crash_with_stack_trace()
+      return tbl -- a lie to appease the type system
     end
     return result
   end
@@ -278,7 +279,9 @@ function denormalize(node)
 
   local typeTable = {
     Pandoc = function(tbl)
+      quarto.utils.dump(tbl)
       tbl = copy(tbl)
+      quarto.utils.dump(tbl)
       tbl.blocks = doArray(tbl.blocks)
       local result = baseHandler(tbl)
       return result
@@ -324,17 +327,22 @@ function denormalize(node)
     Superscript = contentHandler,
     Underline = contentHandler,
 
-    -- we don't fully normalize Table because it is
-    -- almost certainly the case that handling
-    -- it correctly requires access to the full object
-    -- in a custom handler,
-
     Table = baseHandler,
 
     Image = function(image)
       image = copy(image)
       image.caption = doArray(image.caption)
       return baseHandler(image)
+    end,
+
+    Inlines = function(inlines)
+      print(inlines)
+      return tmap(inlines, denormalize)
+    end,
+
+    Blocks = function(blocks)
+      print(blocks)
+      return tmap(blocks, denormalize)
     end,
   }
 
@@ -347,9 +355,11 @@ function denormalize(node)
   if type(node) ~= "table" then
     return node
   end
-  local isExtendedAst = node["-is-extended-ast-"]
+  if node.t == "BulletList" then
+    quarto.utils.dump(node)
+  end
 
-  if node["-is-extended-ast-"] then
+  if node.is_custom and node.is_custom() then
     local denormalizedTable = {}
     for k, v in pairs(node) do
       if not (k == "t" or k == "tag" or k == "class" or k == "attr" or k == "-is-extended-ast-" or k == "-quarto-internal-type-") then
@@ -358,14 +368,7 @@ function denormalize(node)
         denormalizedTable[k] = v
       end
     end
-    if node.t == "Inlines" or node.t == "Blocks" then
-      -- denormalization for Inlines and Blocks is simply writing to a plain array
-      local result = tmap(node, denormalize)
-      return result
-    else
-      local result = quarto.ast.build(node.t, denormalizedTable)
-      return result
-    end
+    return quarto.ast.build(node.t, denormalizedTable)
   end
 
   local t = node["-quarto-internal-type-"]
